@@ -1,0 +1,602 @@
+<!DOCTYPE html>
+<html lang="zh-TW" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WiFi 分析儀模擬器</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://kit.fontawesome.com/a076d05399.js" crossorigin="anonymous"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        .dark .bg-gray-800 { background-color: #1f2937; }
+        .dark .bg-gray-900 { background-color: #111827; }
+        .dark .text-gray-200 { color: #e5e7eb; }
+        .dark .text-gray-400 { color: #9ca3af; }
+        .dark .border-gray-700 { border-color: #374151; }
+        .tab-active {
+            border-bottom: 2px solid #3b82f6;
+            color: #3b82f6;
+        }
+        .chart-container {
+            width: 100%;
+            height: 400px;
+        }
+        .network-bar {
+            transition: width 0.3s ease-in-out, background-color 0.3s ease-in-out;
+        }
+        /* Custom scrollbar for dark mode */
+        .dark ::-webkit-scrollbar {
+            width: 8px;
+        }
+        .dark ::-webkit-scrollbar-track {
+            background: #1f2937;
+        }
+        .dark ::-webkit-scrollbar-thumb {
+            background: #4b5563;
+            border-radius: 4px;
+        }
+        .dark ::-webkit-scrollbar-thumb:hover {
+            background: #6b7280;
+        }
+    </style>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        gray: {
+                            800: '#1f2937',
+                            900: '#111827',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-gray-100 text-gray-900 dark:bg-gray-900 dark:text-gray-200">
+
+    <div class="container mx-auto p-4 max-w-4xl">
+        <!-- Header -->
+        <header class="flex justify-between items-center mb-4">
+            <h1 class="text-xl font-bold">WiFi 分析儀</h1>
+            <div class="flex items-center space-x-4">
+                <button id="theme-toggle" class="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-800">
+                    <svg id="theme-icon-light" class="h-5 w-5 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>
+                    <svg id="theme-icon-dark" class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"></path></svg>
+                </button>
+            </div>
+        </header>
+
+        <!-- Tabs -->
+        <div class="border-b border-gray-200 dark:border-gray-700 mb-4">
+            <nav class="flex space-x-4" aria-label="Tabs">
+                <button class="tab-btn py-2 px-4 text-sm font-medium text-gray-500 dark:text-gray-400 hover:text-blue-500 tab-active" data-tab="ap-view">接入點</button>
+                <button class="tab-btn py-2 px-4 text-sm font-medium text-gray-500 dark:text-gray-400 hover:text-blue-500" data-tab="channel-graph">頻道圖表</button>
+                <button class="tab-btn py-2 px-4 text-sm font-medium text-gray-500 dark:text-gray-400 hover:text-blue-500" data-tab="signal-time">訊號強度歷史</button>
+            </nav>
+        </div>
+
+        <!-- Content -->
+        <main id="app-content">
+            <!-- Access Points View -->
+            <div id="ap-view" class="tab-content space-y-3">
+                <!-- AP List will be dynamically inserted here -->
+            </div>
+
+            <!-- Channel Graph View -->
+            <div id="channel-graph" class="tab-content hidden">
+                <div class="chart-container bg-white dark:bg-gray-800 rounded-lg p-2">
+                    <svg id="channel-chart"></svg>
+                </div>
+            </div>
+
+            <!-- Signal Strength over Time View -->
+            <div id="signal-time" class="tab-content hidden">
+                 <div class="mb-4">
+                    <label for="network-select" class="block text-sm font-medium text-gray-500 dark:text-gray-400">選擇一個網路來查看歷史記錄：</label>
+                    <select id="network-select" class="mt-1 block w-full bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm text-gray-900 dark:text-white">
+                        <!-- Options will be dynamically inserted here -->
+                    </select>
+                </div>
+                <div class="chart-container bg-white dark:bg-gray-800 rounded-lg p-2">
+                    <svg id="time-chart"></svg>
+                </div>
+            </div>
+        </main>
+
+        <!-- Footer Controls -->
+        <footer class="mt-4 flex flex-wrap gap-4 justify-between items-center">
+             <div class="flex items-center space-x-2">
+                <button id="scan-toggle" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-md text-sm font-medium text-white">暫停掃描</button>
+            </div>
+            <div class="flex flex-wrap gap-2 items-center">
+                <select id="band-filter" class="bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-md py-1 px-2 text-sm text-gray-900 dark:text-gray-200">
+                    <option value="all">所有頻段</option>
+                    <option value="2.4">2.4 GHz</option>
+                    <option value="5">5 GHz</option>
+                    <option value="6">6 GHz</option>
+                </select>
+                <select id="security-filter" class="bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-md py-1 px-2 text-sm text-gray-900 dark:text-gray-200">
+                    <option value="all">所有安全性</option>
+                    <option value="WPA3">WPA3</option>
+                    <option value="WPA2">WPA2</option>
+                    <option value="WPA">WPA</option>
+                    <option value="WEP">WEP</option>
+                    <option value="OPEN">開放</option>
+                </select>
+                 <input type="text" id="ssid-filter" placeholder="依 SSID 過濾..." class="bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-md py-1 px-2 text-sm w-32 text-gray-900 dark:text-gray-200">
+            </div>
+        </footer>
+    </div>
+    
+    <!-- Access Point Details Modal -->
+    <div id="ap-details-modal" class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center hidden z-50">
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 w-full max-w-md m-4">
+            <div class="flex justify-between items-center border-b border-gray-200 dark:border-gray-700 pb-3 mb-4">
+                <h3 class="text-lg font-bold" id="modal-ssid"></h3>
+                <button id="modal-close" class="text-gray-400 hover:text-gray-600 dark:hover:text-white">&times;</button>
+            </div>
+            <div id="modal-content" class="text-sm space-y-2"></div>
+        </div>
+    </div>
+
+
+    <script>
+    document.addEventListener('DOMContentLoaded', () => {
+        // --- DOM Elements ---
+        const tabButtons = document.querySelectorAll('.tab-btn');
+        const tabContents = document.querySelectorAll('.tab-content');
+        const apViewContainer = document.getElementById('ap-view');
+        const scanToggleButton = document.getElementById('scan-toggle');
+        const bandFilter = document.getElementById('band-filter');
+        const securityFilter = document.getElementById('security-filter');
+        const ssidFilter = document.getElementById('ssid-filter');
+        const themeToggleButton = document.getElementById('theme-toggle');
+        const themeIconLight = document.getElementById('theme-icon-light');
+        const themeIconDark = document.getElementById('theme-icon-dark');
+        const networkSelect = document.getElementById('network-select');
+        const modal = document.getElementById('ap-details-modal');
+        const modalClose = document.getElementById('modal-close');
+        const modalSsid = document.getElementById('modal-ssid');
+        const modalContent = document.getElementById('modal-content');
+
+
+        // --- State Management ---
+        let isScanning = true;
+        let networks = [];
+        let simulationInterval;
+        let selectedNetworkForHistory = null;
+        let networkHistory = {};
+
+        // --- Mock Data Generation ---
+        const generateMAC = () => Array(6).fill(0).map(() => Math.floor(Math.random() * 256).toString(16).padStart(2, '0')).join(':');
+        const ssids = ["Netcore1", "TP-LINK_44C950", "Tenda_597638", "home", "Office-Guest", "MyAwesomeWifi", "Free_Public_WiFi", "AndroidAP", "CafeNet", "LibraryWiFi", "LNSS", "LNSS_101", "LNSS_205", "LNSS_310"];
+        const securities = ["WPA2", "WPA3", "WPA", "WEP", "OPEN"];
+        
+        // Realistic channel lists
+        const channels24 = [1, 1, 1, 2, 3, 4, 5, 6, 6, 6, 7, 8, 9, 10, 11, 11, 11, 12, 13, 14]; // Biased towards 1, 6, 11
+        const channels5 = [36, 40, 44, 48, 52, 56, 60, 64, 100, 104, 108, 112, 116, 120, 124, 128, 132, 136, 140, 144, 149, 153, 157, 161, 165];
+        const channels6 = [1, 5, 9, 13, 17, 21, 25, 29, 33, 37, 41, 45, 49, 53, 57, 61, 65, 69, 73, 77, 81, 85, 89, 93, 97, 101, 105, 109, 113, 117, 121, 125, 129, 133, 137, 141, 145, 149, 153, 157, 161, 165, 169, 173, 177, 181, 185, 189, 193, 197, 201, 205, 209, 213, 217, 221, 225, 229, 233];
+
+
+        function createInitialNetworks() {
+            let initialNetworks = ssids.map((ssid, index) => {
+                const band = Math.random() > 0.4 ? 2.4 : (Math.random() > 0.5 ? 5 : 6);
+                let channel;
+                if (band === 2.4) {
+                    channel = channels24[Math.floor(Math.random() * channels24.length)];
+                } else if (band === 5) {
+                    channel = channels5[Math.floor(Math.random() * channels5.length)];
+                } else { // 6 GHz
+                    channel = channels6[Math.floor(Math.random() * channels6.length)];
+                }
+
+                // Make LNSS networks stronger
+                const isLnss = ssid.toLowerCase().includes('lnss');
+                const signal = isLnss 
+                    ? -Math.floor(Math.random() * 20 + 30) // Stronger: -30 to -50 dBm
+                    : -Math.floor(Math.random() * 39 + 51); // Weaker: -51 to -90 dBm
+
+                const network = {
+                    ssid,
+                    mac: generateMAC(),
+                    signal,
+                    channel,
+                    band,
+                    security: securities[Math.floor(Math.random() * securities.length)],
+                    ht_vht: `${[40, 80, 160][Math.floor(Math.random() * 3)]} MHz`
+                };
+                networkHistory[network.mac] = [{time: new Date(), signal: network.signal}];
+                return network;
+            });
+
+            // Find the strongest LNSS network to connect to
+            const lnssNetworks = initialNetworks.filter(n => n.ssid.toLowerCase().includes('lnss'));
+            if (lnssNetworks.length > 0) {
+                // Sort by signal strength (descending, so higher dBm first)
+                lnssNetworks.sort((a, b) => b.signal - a.signal);
+                const connectedLnss = lnssNetworks[0];
+                
+                // Find the actual object in the main array and update it
+                const networkToConnect = initialNetworks.find(n => n.mac === connectedLnss.mac);
+                if (networkToConnect) {
+                    networkToConnect.connected = true;
+                    networkToConnect.ip = "192.168.1.101";
+                }
+            }
+            
+            return initialNetworks;
+        }
+
+        function simulateSignalChange() {
+            networks.forEach(net => {
+                const change = (Math.random() - 0.5) * 4; // Fluctuate by +/- 2 dBm
+                net.signal = Math.round(Math.min(-30, Math.max(-100, net.signal + change)));
+                
+                // Add to history
+                if (!networkHistory[net.mac]) {
+                    networkHistory[net.mac] = [];
+                }
+                networkHistory[net.mac].push({ time: new Date(), signal: net.signal });
+                // Keep history to last 60 points
+                if (networkHistory[net.mac].length > 60) {
+                    networkHistory[net.mac].shift();
+                }
+            });
+            render();
+        }
+
+        // --- Rendering ---
+        function getSignalColor(signal) {
+            if (signal > -60) return 'bg-green-600';
+            if (signal > -75) return 'bg-yellow-500';
+            if (signal > -85) return 'bg-orange-500';
+            return 'bg-red-600';
+        }
+
+        function renderAPView() {
+            const filteredNetworks = networks.filter(net => {
+                const bandMatch = bandFilter.value === 'all' || net.band == bandFilter.value;
+                const securityMatch = securityFilter.value === 'all' || net.security === securityFilter.value;
+                const ssidMatch = ssidFilter.value === '' || net.ssid.toLowerCase().includes(ssidFilter.value.toLowerCase());
+                return bandMatch && securityMatch && ssidMatch;
+            }).sort((a, b) => b.signal - a.signal);
+
+            apViewContainer.innerHTML = filteredNetworks.map(net => {
+                const signalWidth = Math.max(0, (net.signal + 100) * 100 / 70); // Scale signal for bar width
+                const color = getSignalColor(net.signal);
+                
+                let connectedInfo = '';
+                if(net.connected) {
+                    connectedInfo = `
+                        <div class="text-xs text-blue-400 mt-1">
+                            已連接到: ${net.ssid} (${net.mac})
+                        </div>
+                        <div class="text-xs text-blue-400">
+                            IP 地址: ${net.ip}
+                        </div>
+                    `;
+                }
+
+                return `
+                <div class="bg-white dark:bg-gray-800 p-3 rounded-lg cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700 ap-item" data-mac="${net.mac}">
+                    ${net.connected ? connectedInfo : ''}
+                    <div class="flex justify-between items-center">
+                        <span class="font-semibold">${net.ssid} <span class="text-gray-500 dark:text-gray-400 text-sm">(${net.mac})</span></span>
+                        <span class="font-bold text-lg">${net.signal} dBm</span>
+                    </div>
+                    <div class="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-2.5 mt-2">
+                        <div class="${color} h-2.5 rounded-full network-bar" style="width: ${signalWidth}%"></div>
+                    </div>
+                    <div class="text-xs text-gray-500 dark:text-gray-400 mt-2 flex justify-between">
+                        <span>CH ${net.channel} - ${net.band} GHz</span>
+                        <span>[${net.security}]</span>
+                    </div>
+                </div>
+                `;
+            }).join('');
+            
+            // Re-attach event listeners for details modal
+             document.querySelectorAll('.ap-item').forEach(item => {
+                item.addEventListener('click', (e) => {
+                    const mac = e.currentTarget.getAttribute('data-mac');
+                    showAPDetails(mac);
+                });
+            });
+        }
+        
+        function populateNetworkSelect() {
+            const currentSelection = networkSelect.value;
+            networkSelect.innerHTML = networks.map(n => `<option value="${n.mac}">${n.ssid}</option>`).join('');
+            
+            if (currentSelection && networks.some(n => n.mac === currentSelection)) {
+                networkSelect.value = currentSelection;
+            } else if (networks.length > 0) {
+                networkSelect.value = networks[0].mac;
+                selectedNetworkForHistory = networks[0].mac;
+            }
+            renderTimeChart();
+        }
+
+        function render() {
+            renderAPView();
+            renderChannelChart();
+            renderTimeChart();
+        }
+        
+        // --- Charting (D3.js) ---
+        const channelChartSvg = d3.select("#channel-chart");
+        const timeChartSvg = d3.select("#time-chart");
+
+        function renderChannelChart() {
+            const isDark = document.documentElement.classList.contains('dark');
+            const axisColor = isDark ? '#9ca3af' : '#4b5563'; // gray-400 or gray-600
+            const labelColor = isDark ? 'white' : 'black';
+
+            const band = bandFilter.value === 'all' ? 2.4 : parseFloat(bandFilter.value);
+            const { channels, width } = getBandDetails(band);
+
+            const container = document.getElementById('channel-chart').parentElement;
+            const margin = { top: 20, right: 20, bottom: 40, left: 50 };
+            const chartWidth = container.clientWidth - margin.left - margin.right;
+            const chartHeight = container.clientHeight - margin.top - margin.bottom;
+
+            channelChartSvg.selectAll("*").remove();
+
+            const svg = channelChartSvg
+                .attr("width", container.clientWidth)
+                .attr("height", container.clientHeight)
+                .append("g")
+                .attr("transform", `translate(${margin.left},${margin.top})`);
+
+            const x = d3.scaleLinear().domain([d3.min(channels) - 1, d3.max(channels) + 1]).range([0, chartWidth]);
+            const y = d3.scaleLinear().domain([-100, -20]).range([chartHeight, 0]);
+
+            svg.append("g").attr("transform", `translate(0,${chartHeight})`).call(d3.axisBottom(x).tickValues(channels)).selectAll("text").style("fill", axisColor);
+            svg.append("g").call(d3.axisLeft(y)).selectAll("text").style("fill", axisColor);
+            
+            svg.append("text")
+                .attr("transform", "rotate(-90)")
+                .attr("y", 0 - margin.left)
+                .attr("x",0 - (chartHeight / 2))
+                .attr("dy", "1em")
+                .style("text-anchor", "middle")
+                .style("fill", axisColor)
+                .style("font-size", "12px")
+                .text("訊號強度 (dBm)");
+
+            svg.append("text")
+                .attr("transform", `translate(${chartWidth/2}, ${chartHeight + margin.bottom - 5})`)
+                .style("text-anchor", "middle")
+                .style("fill", axisColor)
+                .style("font-size", "12px")
+                .text("WiFi 頻道");
+
+            const colors = d3.scaleOrdinal(d3.schemeCategory10);
+            
+            const filteredNetworks = networks.filter(net => band === 'all' || net.band === band);
+
+            filteredNetworks.forEach((net, i) => {
+                const peakSignal = net.signal;
+                const centerChannel = net.channel;
+                
+                const line = d3.line()
+                    .x(d => x(d.channel))
+                    .y(d => y(d.signal))
+                    .curve(d3.curveBasis);
+
+                const area = d3.area()
+                    .x(d => x(d.channel))
+                    .y0(chartHeight)
+                    .y1(d => y(d.signal))
+                    .curve(d3.curveBasis);
+
+                // The total drop required for the arc to touch the -100dBm baseline
+                const totalSignalDrop = peakSignal - (-100); 
+
+                const curvePoints = d3.range(centerChannel - width, centerChannel + width + 0.1, 0.1).map(ch => {
+                    const dist = Math.abs(ch - centerChannel);
+                    // A parabolic curve where the signal at the edge (dist === width) drops by totalSignalDrop
+                    const signalDrop = Math.pow(dist / width, 2) * totalSignalDrop;
+                    return { channel: ch, signal: peakSignal - signalDrop };
+                });
+
+                if (curvePoints.length > 1) {
+                    svg.append("path")
+                        .datum(curvePoints)
+                        .attr("fill", colors(i))
+                        .attr("fill-opacity", 0.3)
+                        .attr("d", area);
+
+                    svg.append("path")
+                        .datum(curvePoints)
+                        .attr("fill", "none")
+                        .attr("stroke", colors(i))
+                        .attr("stroke-width", 1.5)
+                        .attr("d", line);
+
+                    svg.append("text")
+                        .attr("x", x(centerChannel))
+                        .attr("y", y(peakSignal) - 5)
+                        .attr("text-anchor", "middle")
+                        .style("fill", labelColor)
+                        .style("font-size", "10px")
+                        .text(net.ssid);
+                }
+            });
+        }
+        
+        function getBandDetails(band) {
+            if (band === 5) return { channels: d3.range(36, 166, 4), width: 4 };
+            if (band === 6) return { channels: d3.range(1, 94, 4), width: 8 };
+            // Default to 2.4 GHz
+            return { channels: d3.range(1, 15), width: 2 };
+        }
+        
+        function renderTimeChart() {
+            const isDark = document.documentElement.classList.contains('dark');
+            const axisColor = isDark ? '#9ca3af' : '#4b5563'; // gray-400 or gray-600
+
+            if (!selectedNetworkForHistory) return;
+
+            const history = networkHistory[selectedNetworkForHistory] || [];
+            if (history.length < 2) {
+                 timeChartSvg.selectAll("*").remove();
+                 return;
+            }
+
+            const container = document.getElementById('time-chart').parentElement;
+            const margin = { top: 20, right: 20, bottom: 40, left: 50 };
+            const chartWidth = container.clientWidth - margin.left - margin.right;
+            const chartHeight = container.clientHeight - margin.top - margin.bottom;
+
+            timeChartSvg.selectAll("*").remove();
+
+            const svg = timeChartSvg
+                .attr("width", container.clientWidth)
+                .attr("height", container.clientHeight)
+                .append("g")
+                .attr("transform", `translate(${margin.left},${margin.top})`);
+
+            const x = d3.scaleTime().domain(d3.extent(history, d => d.time)).range([0, chartWidth]);
+            const y = d3.scaleLinear().domain([-100, -20]).range([chartHeight, 0]);
+
+            svg.append("g").attr("transform", `translate(0,${chartHeight})`).call(d3.axisBottom(x).ticks(5)).selectAll("text").style("fill", axisColor);
+            svg.append("g").call(d3.axisLeft(y)).selectAll("text").style("fill", axisColor);
+
+            svg.append("text")
+                .attr("transform", "rotate(-90)")
+                .attr("y", 0 - margin.left)
+                .attr("x",0 - (chartHeight / 2))
+                .attr("dy", "1em")
+                .style("text-anchor", "middle")
+                .style("fill", axisColor)
+                .style("font-size", "12px")
+                .text("訊號強度 (dBm)");
+
+            const line = d3.line()
+                .x(d => x(d.time))
+                .y(d => y(d.signal));
+
+            svg.append("path")
+                .datum(history)
+                .attr("fill", "none")
+                .attr("stroke", "#3b82f6")
+                .attr("stroke-width", 2)
+                .attr("d", line);
+        }
+        
+        // --- Event Listeners & Controls ---
+        tabButtons.forEach(button => {
+            button.addEventListener('click', () => {
+                tabButtons.forEach(btn => btn.classList.remove('tab-active'));
+                button.classList.add('tab-active');
+
+                const targetTab = button.getAttribute('data-tab');
+                tabContents.forEach(content => {
+                    if (content.id === targetTab) {
+                        content.classList.remove('hidden');
+                    } else {
+                        content.classList.add('hidden');
+                    }
+                });
+                // Re-render charts on tab switch to ensure correct dimensions
+                if(targetTab === 'channel-graph') renderChannelChart();
+                if(targetTab === 'signal-time') renderTimeChart();
+            });
+        });
+
+        scanToggleButton.addEventListener('click', () => {
+            isScanning = !isScanning;
+            scanToggleButton.textContent = isScanning ? '暫停掃描' : '恢復掃描';
+            if (isScanning) {
+                simulationInterval = setInterval(simulateSignalChange, 1500);
+                 scanToggleButton.classList.replace('bg-green-600', 'bg-blue-600');
+                 scanToggleButton.classList.replace('hover:bg-green-700', 'hover:bg-blue-700');
+            } else {
+                clearInterval(simulationInterval);
+                scanToggleButton.classList.replace('bg-blue-600', 'bg-green-600');
+                scanToggleButton.classList.replace('hover:bg-blue-700', 'hover:bg-green-700');
+            }
+        });
+        
+        networkSelect.addEventListener('change', (e) => {
+            selectedNetworkForHistory = e.target.value;
+            renderTimeChart();
+        });
+
+        [bandFilter, securityFilter, ssidFilter].forEach(filter => {
+            filter.addEventListener('input', render);
+        });
+        
+        themeToggleButton.addEventListener('click', () => {
+             document.documentElement.classList.toggle('dark');
+             const isDark = document.documentElement.classList.contains('dark');
+             themeIconLight.classList.toggle('hidden', isDark);
+             themeIconDark.classList.toggle('hidden', !isDark);
+             // Re-render charts on theme change for color updates
+             render();
+        });
+        
+        // --- Modal Logic ---
+        function calculateDistance(signal, band) {
+            // Log-distance path loss model approximation
+            const freqInMHz = band * 1000;
+            const exp = (27.55 - (20 * Math.log10(freqInMHz)) + Math.abs(signal)) / 20.0;
+            const distance = Math.pow(10.0, exp);
+            return distance.toFixed(2); // in meters
+        }
+
+        function showAPDetails(mac) {
+            const network = networks.find(n => n.mac === mac);
+            if (!network) return;
+
+            modalSsid.textContent = network.ssid;
+            modalContent.innerHTML = `
+                <p><strong>MAC 地址:</strong> ${network.mac}</p>
+                <p><strong>訊號強度:</strong> ${network.signal} dBm</p>
+                <p><strong>頻道:</strong> ${network.channel}</p>
+                <p><strong>頻段:</strong> ${network.band} GHz</p>
+                <p><strong>安全性:</strong> ${network.security}</p>
+                <p><strong>HT/VHT:</strong> ${network.ht_vht}</p>
+                <p><strong>估計距離:</strong> ~${calculateDistance(network.signal, network.band)} 公尺</p>
+            `;
+            modal.classList.remove('hidden');
+        }
+
+        modalClose.addEventListener('click', () => modal.classList.add('hidden'));
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                modal.classList.add('hidden');
+            }
+        });
+
+        // --- Initialization ---
+        function init() {
+            networks = createInitialNetworks();
+            populateNetworkSelect();
+            render();
+            simulationInterval = setInterval(simulateSignalChange, 1500);
+            window.addEventListener('resize', render);
+            // Set initial theme icon
+            const isDark = document.documentElement.classList.contains('dark');
+            themeIconLight.classList.toggle('hidden', isDark);
+            themeIconDark.classList.toggle('hidden', !isDark);
+        }
+        
+        init();
+    });
+    </script>
+</body>
+</html>
+
+
+
+
+
