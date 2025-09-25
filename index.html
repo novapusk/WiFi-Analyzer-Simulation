@@ -184,6 +184,17 @@
         const channels5 = [36, 40, 44, 48, 52, 56, 60, 64, 100, 104, 108, 112, 116, 120, 124, 128, 132, 136, 140, 144, 149, 153, 157, 161, 165];
         const channels6 = [1, 5, 9, 13, 17, 21, 25, 29, 33, 37, 41, 45, 49, 53, 57, 61, 65, 69, 73, 77, 81, 85, 89, 93, 97, 101, 105, 109, 113, 117, 121, 125, 129, 133, 137, 141, 145, 149, 153, 157, 161, 165, 169, 173, 177, 181, 185, 189, 193, 197, 201, 205, 209, 213, 217, 221, 225, 229, 233];
 
+        function getWifiStandardDetails(band, ht_vht_str) {
+            const width = parseInt(ht_vht_str.split(' ')[0]);
+            if (band === 6) return { standard: "Wi-Fi 6E (802.11ax)", maxSpeed: 2400 + Math.floor(Math.random() * 200) };
+            if (band === 5) {
+                if (width >= 80 && Math.random() > 0.5) return { standard: "Wi-Fi 6 (802.11ax)", maxSpeed: 1200 + Math.floor(Math.random() * 200) };
+                return { standard: "Wi-Fi 5 (802.11ac)", maxSpeed: 866 + Math.floor(Math.random() * 100) };
+            }
+            // 2.4 GHz band
+            if (width >= 40 && Math.random() > 0.7) return { standard: "Wi-Fi 6 (802.11ax)", maxSpeed: 600 + Math.floor(Math.random() * 100) };
+            return { standard: "Wi-Fi 4 (802.11n)", maxSpeed: 300 + Math.floor(Math.random() * 100) };
+        }
 
         function createInitialNetworks() {
             let initialNetworks = ssids.map((ssid, index) => {
@@ -203,6 +214,9 @@
                     ? -Math.floor(Math.random() * 20 + 30) // Stronger: -30 to -50 dBm
                     : -Math.floor(Math.random() * 39 + 51); // Weaker: -51 to -90 dBm
 
+                const ht_vht = `${[40, 80, 160][Math.floor(Math.random() * 3)]} MHz`;
+                const { standard, maxSpeed } = getWifiStandardDetails(band, ht_vht);
+
                 const network = {
                     ssid,
                     mac: generateMAC(),
@@ -210,7 +224,9 @@
                     channel,
                     band,
                     security: securities[Math.floor(Math.random() * securities.length)],
-                    ht_vht: `${[40, 80, 160][Math.floor(Math.random() * 3)]} MHz`
+                    ht_vht,
+                    standard,
+                    maxSpeed
                 };
                 networkHistory[network.mac] = [{time: new Date(), signal: network.signal}];
                 return network;
@@ -557,18 +573,90 @@
             const network = networks.find(n => n.mac === mac);
             if (!network) return;
 
+            modal.setAttribute('data-mac', mac); // Set mac for speed test
             modalSsid.textContent = network.ssid;
             modalContent.innerHTML = `
                 <p><strong>MAC 地址:</strong> ${network.mac}</p>
                 <p><strong>訊號強度:</strong> ${network.signal} dBm</p>
                 <p><strong>頻道:</strong> ${network.channel}</p>
                 <p><strong>頻段:</strong> ${network.band} GHz</p>
+                <p><strong>802.11 標準:</strong> ${network.standard}</p>
+                <p><strong>最大速度:</strong> ~${network.maxSpeed} Mbps</p>
                 <p><strong>安全性:</strong> ${network.security}</p>
                 <p><strong>HT/VHT:</strong> ${network.ht_vht}</p>
                 <p><strong>估計距離:</strong> ~${calculateDistance(network.signal, network.band)} 公尺</p>
+
+                <div id="speed-test-section" class="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+                    <h4 class="font-semibold mb-2">速度測試</h4>
+                    <div id="speed-test-results" class="flex justify-around text-center mb-3">
+                        <div>
+                            <p class="text-xs text-gray-500 dark:text-gray-400">Ping</p>
+                            <p id="ping-result" class="text-lg font-bold">- ms</p>
+                        </div>
+                        <div>
+                            <p class="text-xs text-gray-500 dark:text-gray-400">下載</p>
+                            <p id="download-result" class="text-lg font-bold">- Mbps</p>
+                        </div>
+                        <div>
+                            <p class="text-xs text-gray-500 dark:text-gray-400">上傳</p>
+                            <p id="upload-result" class="text-lg font-bold">- Mbps</p>
+                        </div>
+                    </div>
+                    <button id="start-speed-test" class="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-md text-sm font-medium text-white transition-colors">開始測試</button>
+                </div>
             `;
             modal.classList.remove('hidden');
         }
+
+        function runSpeedTest(mac) {
+            const network = networks.find(n => n.mac === mac);
+            if (!network) return;
+
+            const button = document.getElementById('start-speed-test');
+            const pingEl = document.getElementById('ping-result');
+            const downloadEl = document.getElementById('download-result');
+            const uploadEl = document.getElementById('upload-result');
+
+            button.disabled = true;
+            button.textContent = '測試中...';
+            pingEl.textContent = '...';
+            downloadEl.textContent = '...';
+            uploadEl.textContent = '...';
+
+            // Simulate Ping
+            setTimeout(() => {
+                const ping = Math.floor(5 + (-30 - network.signal) * 0.6 + Math.random() * 10);
+                pingEl.textContent = `${ping} ms`;
+            }, 1000);
+
+            // Simulate Download
+            setTimeout(() => {
+                const signalFactor = (network.signal + 100) / 70; // 0 to 1 for -100 to -30 dBm
+                let downloadSpeed = network.maxSpeed * signalFactor * (Math.random() * 0.2 + 0.8);
+                downloadSpeed = Math.max(0, downloadSpeed); // Ensure non-negative
+                downloadEl.textContent = `${downloadSpeed.toFixed(2)} Mbps`;
+                
+                // Simulate Upload
+                setTimeout(() => {
+                    let uploadSpeed = downloadSpeed * (Math.random() * 0.4 + 0.5);
+                    uploadSpeed = Math.max(0, uploadSpeed);
+                    uploadEl.textContent = `${uploadSpeed.toFixed(2)} Mbps`;
+
+                    button.disabled = false;
+                    button.textContent = '重新測試';
+                }, 2000);
+
+            }, 2500);
+        }
+        
+        document.body.addEventListener('click', function(e) {
+            if (e.target.id === 'start-speed-test') {
+                const mac = e.target.closest('#ap-details-modal').getAttribute('data-mac');
+                if (mac) {
+                    runSpeedTest(mac);
+                }
+            }
+        });
 
         modalClose.addEventListener('click', () => modal.classList.add('hidden'));
         modal.addEventListener('click', (e) => {
@@ -595,8 +683,3 @@
     </script>
 </body>
 </html>
-
-
-
-
-
